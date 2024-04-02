@@ -1,0 +1,67 @@
+<?php
+session_start();
+
+$interval = 60; // Thời gian (giây) giữa mỗi lần yêu cầu
+$max_request_count = 20; // Số lần yêu cầu tối đa cho mỗi IP
+$ban_time = 60; // Thời gian cấm truy cập (giây) sau khi vượt quá số lần yêu cầu
+
+$ip_address = $_SERVER['REMOTE_ADDR'];
+$request_info = "$ip_address:{$_SERVER['REQUEST_METHOD']}:" . time(); // Thông tin yêu cầu của IP và thời gian
+
+$log_file = './request_log.txt'; // Đường dẫn tuyệt đối của tệp log
+
+// Đảm bảo tệp log tồn tại
+if (!file_exists($log_file)) {
+    file_put_contents($log_file, '');
+}
+
+// Đọc thông tin từ tệp log
+$log_data = file_get_contents($log_file);
+
+// Tách thông tin thành mảng các yêu cầu
+$log_lines = explode("\n", $log_data);
+
+// Xóa các yêu cầu cũ hơn interval
+$current_time = time();
+foreach ($log_lines as $key => $log_line) {
+    $log_parts = explode(':', $log_line);
+    $log_ip = $log_parts[0];
+    $log_time = intval($log_parts[2]);
+    if ($current_time - $log_time > $interval) {
+        unset($log_lines[$key]);
+    }
+}
+
+// Đếm số lượng yêu cầu từ IP hiện tại
+$current_ip_request_count = 0;
+foreach ($log_lines as $log_line) {
+    $log_parts = explode(':', $log_line);
+    $log_ip = $log_parts[0];
+    if ($log_ip === $ip_address) {
+        $current_ip_request_count++;
+    }
+}
+
+// Kiểm tra nếu số lần yêu cầu từ IP hiện tại vượt quá max_request_count
+if ($current_ip_request_count >= $max_request_count) {
+    // Đánh dấu IP này là bị cấm truy cập bằng cách lưu vào biến phiên
+    $_SESSION['banned'][$ip_address] = time() + $ban_time;
+    // Chuyển hướng người dùng đến Google với mã trạng thái 301
+    header("HTTP/1.1 301 Moved Permanently");
+    header("Location: https://www.google.com");
+    exit();
+}
+
+// Kiểm tra nếu IP hiện tại đang trong thời gian cấm truy cập
+if (isset($_SESSION['banned'][$ip_address]) && $_SESSION['banned'][$ip_address] > time()) {
+    // Chuyển hướng người dùng đến Google với mã trạng thái 301
+    header("HTTP/1.1 301 Moved Permanently");
+    header("Location: https://www.google.com");
+    exit();
+}
+
+// Ghi thông tin yêu cầu vào log
+file_put_contents($log_file, "$request_info\n", FILE_APPEND);
+
+// Nếu không vượt quá số lần yêu cầu và không bị cấm truy cập, tiếp tục hiển thị trang web bình thường
+?>
